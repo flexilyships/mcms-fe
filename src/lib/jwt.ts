@@ -1,6 +1,6 @@
 /**
  * Decodes a JWT payload without verifying the signature.
- * Used only to recover the signup email for resend after a failed verification.
+ * Used only to recover the signup email for resend afta a failed verification.
  */
 export function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
