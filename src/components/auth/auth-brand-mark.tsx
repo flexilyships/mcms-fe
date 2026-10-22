@@ -4,7 +4,7 @@ export function AuthBrandMark() {
   return (
     <div className="relative h-16 w-16 overflow-hidden">
       <Image
-        src="/assets/logo.png"
+        src="/assets/logo.svg"
         alt="FLEXY"
         width={192}
         height={64}

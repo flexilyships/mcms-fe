@@ -15,7 +15,7 @@ export function Footer() {
           <div className="md:col-span-6 space-y-3">
             <div className="relative w-36 h-10">
               <Image
-                src="/assets/logo.png"
+                src="/assets/logo.svg"
                 alt="FLEXY"
                 fill
                 className="object-contain object-left"

@@ -26,7 +26,7 @@ export function Navbar({ onJoinClick }: NavbarProps) {
         <Link href="/" className="flex items-center gap-3">
           <div className="relative w-36 h-10">
             <Image
-              src="/assets/logo.png"
+              src="/assets/logo.svg"
               alt="FLEXY"
               fill
               className="object-contain object-left"

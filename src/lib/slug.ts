@@ -27,8 +27,12 @@ export function workspaceUrlToSlug(value: string): string {
   return slug;
 }
 
+export function isReservedSlug(slug: string): boolean {
+  return RESERVED_SLUGS.has(slug);
+}
+
 export function isValidSlug(slug: string): boolean {
   if (slug.length < 2 || slug.length > 80) return false;
-  if (RESERVED_SLUGS.has(slug)) return false;
+  if (isReservedSlug(slug)) return false;
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
 }

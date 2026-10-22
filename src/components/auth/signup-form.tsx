@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, type SubmitHandler } from "react-hook-form";
+import { Controller, useForm, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CircleHelp, ShieldCheck } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { createSignup, checkSlugAvailability } from "@/services/signup-service";
 import {
   PENDING_SIGNUP_EMAIL_KEY,
@@ -14,10 +14,15 @@ import {
   type SignupFormValues,
 } from "@/types/signup";
 import { extractErrorMessage } from "@/lib/utils";
-import { isValidSlug, workspaceUrlToSlug } from "@/lib/slug";
+import { isReservedSlug, isValidSlug, workspaceUrlToSlug } from "@/lib/slug";
 import { persistTenantSlug } from "@/lib/auth-storage";
+import { useDebouncedValue } from "@/lib/utils";
 import { Button, FormField, Input, PasswordInput, TextLink } from "@/components/ui";
 import { AuthCard } from "@/components/auth/auth-card";
+import {
+  WorkspaceUrlField,
+  type SlugAvailabilityStatus,
+} from "@/components/auth/workspace-url-field";
 
 interface SignupFormProps {
   onVerificationSent: () => void;
@@ -31,7 +36,10 @@ export function SignupForm({ onVerificationSent, disabled }: SignupFormProps) {
     register,
     handleSubmit,
     watch,
+    control,
+    setValue,
     setError,
+    clearErrors,
     formState: { errors },
   } = useForm<SignupFormValues>({
     resolver: zodResolver(signupFormSchema),
@@ -46,14 +54,24 @@ export function SignupForm({ onVerificationSent, disabled }: SignupFormProps) {
 
   const workspaceUrl = watch("workspaceUrl");
   const slug = workspaceUrlToSlug(workspaceUrl ?? "");
-  const slugLooksValid = isValidSlug(slug);
+  const debouncedSlug = useDebouncedValue(slug, 500);
+  const isTyping = slug !== debouncedSlug;
+  const slugLooksValid = isValidSlug(debouncedSlug);
 
   const slugQuery = useQuery({
-    queryKey: ["signup-slug", slug],
-    queryFn: () => checkSlugAvailability(slug),
-    enabled: slugLooksValid && !disabled,
+    queryKey: ["signup-slug", debouncedSlug],
+    queryFn: () => checkSlugAvailability(debouncedSlug),
+    enabled: slugLooksValid && !disabled && !isTyping,
     staleTime: 30_000,
     retry: false,
+  });
+
+  const slugStatus = resolveSlugStatus({
+    slug,
+    isTyping,
+    isValid: isValidSlug(slug),
+    isFetching: slugQuery.isFetching,
+    available: slugQuery.data?.available,
   });
 
   const mutation = useMutation({
@@ -84,6 +102,14 @@ export function SignupForm({ onVerificationSent, disabled }: SignupFormProps) {
       setError("workspaceUrl", {
         type: "validate",
         message: nextSlug.length === 0 ? "Required" : "Use letters, numbers, and hyphens only",
+      });
+      return;
+    }
+
+    if (isTyping || slugQuery.isFetching) {
+      setError("workspaceUrl", {
+        type: "validate",
+        message: "Please wait while we check this workspace URL",
       });
       return;
     }
@@ -202,23 +228,38 @@ export function SignupForm({ onVerificationSent, disabled }: SignupFormProps) {
             </span>
           }
         >
-          <Input
-            id="workspaceUrl"
-            placeholder="ex. VesselReady"
-            autoComplete="off"
-            disabled={isPending}
-            error={Boolean(errors.workspaceUrl)}
-            trailing={<ShieldCheck className="size-5 text-[#7EB6FF] lg:text-[#1B6DFF]" />}
-            {...register("workspaceUrl")}
+          <Controller
+            name="workspaceUrl"
+            control={control}
+            render={({ field }) => (
+              <WorkspaceUrlField
+                id="workspaceUrl"
+                name={field.name}
+                value={field.value}
+                onBlur={field.onBlur}
+                disabled={isPending}
+                error={Boolean(errors.workspaceUrl) || slugStatus === "taken"}
+                status={slugStatus}
+                onChange={(next) => {
+                  field.onChange(next);
+                  if (errors.workspaceUrl) clearErrors("workspaceUrl");
+                }}
+              />
+            )}
           />
         </FormField>
 
-        {slugLooksValid && slugQuery.data?.available === false && !errors.workspaceUrl && (
-          <p className="-mt-2 text-xs text-[#E53935]">
-            {slugQuery.data.suggested
-              ? `Already taken. Try ${slugQuery.data.suggested}`
-              : "This workspace URL is taken"}
-          </p>
+        {!errors.workspaceUrl && slugStatus !== "idle" && (
+          <div className="-mt-2">
+            <SlugStatusMessage
+              status={slugStatus}
+              suggestion={slugQuery.data?.suggested}
+              onUseSuggestion={(next) => {
+                setValue("workspaceUrl", next, { shouldValidate: true, shouldDirty: true });
+                clearErrors("workspaceUrl");
+              }}
+            />
+          </div>
         )}
 
         <Button type="submit" fullWidth isLoading={mutation.isPending} disabled={isPending} className="mt-3">
@@ -234,4 +275,68 @@ export function SignupForm({ onVerificationSent, disabled }: SignupFormProps) {
       </p>
     </AuthCard>
   );
+}
+
+function resolveSlugStatus(input: {
+  slug: string;
+  isTyping: boolean;
+  isValid: boolean;
+  isFetching: boolean;
+  available?: boolean;
+}): SlugAvailabilityStatus {
+  if (!input.slug) return "idle";
+  if (isReservedSlug(input.slug) && !input.isTyping) return "taken";
+  if (input.slug.length > 0 && !input.isValid && !input.isTyping) return "invalid";
+  if (input.isTyping || input.isFetching) return "checking";
+  if (input.available === true) return "available";
+  if (input.available === false) return "taken";
+  return "idle";
+}
+
+function SlugStatusMessage({
+  status,
+  suggestion,
+  onUseSuggestion,
+}: {
+  status: SlugAvailabilityStatus;
+  suggestion?: string;
+  onUseSuggestion: (value: string) => void;
+}) {
+  if (status === "checking") {
+    return <p className="text-xs text-white/55 lg:text-[#9CA3AF]">Checking availability...</p>;
+  }
+
+  if (status === "available") {
+    return <p className="text-xs text-emerald-400 lg:text-emerald-600">This workspace URL is available</p>;
+  }
+
+  if (status === "invalid") {
+    return (
+      <p className="text-xs text-[#E53935]">
+        Use at least 2 characters: lowercase letters, numbers, and hyphens
+      </p>
+    );
+  }
+
+  if (status === "taken") {
+    return (
+      <p className="text-xs text-[#E53935]">
+        This workspace URL is taken
+        {suggestion ? (
+          <>
+            . Try{" "}
+            <button
+              type="button"
+              className="font-medium underline"
+              onClick={() => onUseSuggestion(suggestion)}
+            >
+              {suggestion}
+            </button>
+          </>
+        ) : null}
+      </p>
+    );
+  }
+
+  return null;
 }
