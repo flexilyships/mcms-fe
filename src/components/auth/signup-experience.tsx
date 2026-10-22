@@ -108,7 +108,7 @@ export function SignupExperience({ verificationToken }: SignupExperienceProps) {
           <div>
             <Link href="/" className="inline-block">
               <Image
-                src="/assets/logo.png"
+                src="/assets/logo.svg"
                 alt="FLEXY"
                 width={160}
                 height={44}

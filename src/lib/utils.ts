@@ -1,5 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { useEffect, useState } from "react";
+
 
 /**
  * Combines class names using clsx and tailwind-merge to prevent Tailwind CSS class conflicts.
@@ -85,4 +87,16 @@ export function extractErrorMessage(error: any): string {
   }
 
   return "An unexpected error occurred. Please try again.";
+}
+
+
+export function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(id);
+  }, [value, delayMs]);
+
+  return debounced;
 }
